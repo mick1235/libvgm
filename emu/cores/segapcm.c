@@ -145,11 +145,11 @@ static void SEGAPCM_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
 
 				/* fetch the sample */
 				v = spcm->rom[offset | (addr >> 8)] - 0x80;
-#ifdef _DEBUG
-				if ((spcm->romusage[(offset | addr >> 8)] & 0x03) == 0x02 && (regs[2] || regs[3]))
-					printf("Access to empty ROM section! (0x%06X)\n", offset | ((addr >> 8)));
-				spcm->romusage[offset | (addr >> 8)] |= 0x01;
-#endif
+//#ifdef _DEBUG
+//				if ((spcm->romusage[(offset | addr >> 8)] & 0x03) == 0x02 && (regs[2] || regs[3]))
+//					printf("Access to empty ROM section! (0x%06X)\n", offset | ((addr >> 8)));
+//				spcm->romusage[offset | (addr >> 8)] |= 0x01;
+//#endif
 
 				/* apply panning and advance */
 				// fixed Bitmask for volume multiplication, thanks to ctr -Valley Bell

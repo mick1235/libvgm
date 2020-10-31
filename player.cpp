@@ -41,7 +41,7 @@ extern "C" int __cdecl _kbhit(void);
 #include "emu/Resampler.h"
 #include "utils/OSMutex.h"
 
-//#define USE_MEMORY_LOADER 1	// define to use the in-memory loader
+#define USE_MEMORY_LOADER 1	// define to use the in-memory loader
 
 int main(int argc, char* argv[]);
 static void DoChipControlMode(PlayerBase* player);
@@ -85,7 +85,7 @@ static UINT32 idWavOut;
 static UINT32 idWavOutDev;
 static UINT32 idWavWrt;
 
-static INT32 AudioOutDrv = -2;
+static INT32 AudioOutDrv = 1;
 static INT32 WaveWrtDrv = -1;
 
 static UINT32 masterVol = 0x10000;	// fixed point 16.16
@@ -994,22 +994,24 @@ static UINT32 GetNthAudioDriver(UINT8 adrvType, INT32 drvNumber)
 	
 	UINT32 drvCount;
 	UINT32 curDrv;
-	INT32 typedDrv;
+	/*INT32 typedDrv;*/
 	UINT32 lastDrv;
 	AUDDRV_INFO* drvInfo;
 	
 	// go through all audio drivers get the ID of the requested Output/Disk Writer driver
 	drvCount = Audio_GetDriverCount();
 	lastDrv = (UINT32)-1;
-	for (typedDrv = 0, curDrv = 0; curDrv < drvCount; curDrv ++)
+	for (/*typedDrv = 0,*/ curDrv = 0; curDrv < drvCount; curDrv ++)
 	{
 		Audio_GetDriverInfo(curDrv, &drvInfo);
 		if (drvInfo->drvType == adrvType)
 		{
 			lastDrv = curDrv;
-			if (typedDrv == drvNumber)
+			/*if (typedDrv == drvNumber)
 				return curDrv;
-			typedDrv ++;
+			typedDrv ++;*/
+			if (curDrv == drvNumber)
+				return curDrv;
 		}
 	}
 	
