@@ -1,4 +1,4 @@
-/* Copyright (C) 1999-2003, 2005-2006, 2008-2011 Free Software Foundation, Inc.
+/* Copyright (C) 1999-2019 Free Software Foundation, Inc.
    This file is part of the GNU LIBICONV Library.
 
    The GNU LIBICONV Library is free software; you can redistribute it
@@ -13,26 +13,15 @@
 
    You should have received a copy of the GNU Library General Public
    License along with the GNU LIBICONV Library; see the file COPYING.LIB.
-   If not, see <http://www.gnu.org/licenses/>.  */
+   If not, see <https://www.gnu.org/licenses/>.  */
 
 /* When installed, this file is called "iconv.h". */
 
 #ifndef _LIBICONV_H
 #define _LIBICONV_H
 
-#if defined(LIBICONV_DLL) && !defined(LIBICONV_STATIC)
-#ifdef BUILDING_LIBICONV
-#define LIBICONV_API __declspec(dllexport)
-#else
-#define LIBICONV_API __declspec(dllimport)
-#endif
-#else
-#define LIBICONV_API
-#endif
-
-#define _LIBICONV_VERSION 0x010F    /* version number: (major<<8) + minor */
-
-extern LIBICONV_API int _libiconv_version; /* Likewise */
+#define _LIBICONV_VERSION 0x0110    /* version number: (major<<8) + minor */
+extern __declspec (dllimport) int _libiconv_version; /* Likewise */
 
 /* We would like to #include any system header file which could define
    iconv_t, 1. in order to eliminate the risk that the user gets compilation
@@ -80,7 +69,7 @@ extern "C" {
 #ifndef LIBICONV_PLUG
 #define iconv_open libiconv_open
 #endif
-extern LIBICONV_API iconv_t iconv_open (const char* tocode, const char* fromcode);
+extern iconv_t iconv_open (const char* tocode, const char* fromcode);
 
 /* Converts, using conversion descriptor ‘cd’, at most ‘*inbytesleft’ bytes
    starting at ‘*inbuf’, writing at most ‘*outbytesleft’ bytes starting at
@@ -90,13 +79,13 @@ extern LIBICONV_API iconv_t iconv_open (const char* tocode, const char* fromcode
 #ifndef LIBICONV_PLUG
 #define iconv libiconv
 #endif
-extern LIBICONV_API size_t iconv (iconv_t cd, char* * inbuf, size_t *inbytesleft, char* * outbuf, size_t *outbytesleft);
+extern size_t iconv (iconv_t cd,  char* * inbuf, size_t *inbytesleft, char* * outbuf, size_t *outbytesleft);
 
 /* Frees resources allocated for conversion descriptor ‘cd’. */
 #ifndef LIBICONV_PLUG
 #define iconv_close libiconv_close
 #endif
-extern LIBICONV_API int iconv_close (iconv_t cd);
+extern int iconv_close (iconv_t cd);
 
 
 #ifdef __cplusplus
@@ -138,12 +127,12 @@ typedef struct {
    encoding ‘tocode’ into preallocated memory. Returns an error indicator
    (0 or -1 with errno set). */
 #define iconv_open_into libiconv_open_into
-extern LIBICONV_API int iconv_open_into (const char* tocode, const char* fromcode,
-                                         iconv_allocation_t* resultp);
+extern int iconv_open_into (const char* tocode, const char* fromcode,
+                            iconv_allocation_t* resultp);
 
 /* Control of attributes. */
 #define iconvctl libiconvctl
-extern LIBICONV_API int iconvctl (iconv_t cd, int request, void* argument);
+extern int iconvctl (iconv_t cd, int request, void* argument);
 
 /* Hook performed after every successful conversion of a Unicode character. */
 typedef void (*iconv_unicode_char_hook) (unsigned int uc, void* data);
@@ -223,26 +212,24 @@ struct iconv_fallbacks {
 
 /* Listing of locale independent encodings. */
 #define iconvlist libiconvlist
-extern LIBICONV_API void iconvlist (int (*do_one) (unsigned int namescount,
-                                                   const char * const * names,
-                                                   void* data),
-                                    void* data);
+extern void iconvlist (int (*do_one) (unsigned int namescount,
+                                      const char * const * names,
+                                      void* data),
+                       void* data);
 
 /* Canonicalize an encoding name.
    The result is either a canonical encoding name, or name itself. */
-extern LIBICONV_API const char * iconv_canonicalize (const char * name);
+extern const char * iconv_canonicalize (const char * name);
 
 /* Support for relocatable packages.  */
 
-#if 0
 /* Sets the original and the current installation prefix of the package.
    Relocation simply replaces a pathname starting with the original prefix
    by the corresponding pathname with the current prefix instead.  Both
    prefixes should be directory names without trailing slash (i.e. use ""
    instead of "/").  */
-extern LIBICONV_API void libiconv_set_relocation_prefix (const char *orig_prefix,
-                                                         const char *curr_prefix);
-#endif
+extern void libiconv_set_relocation_prefix (const char *orig_prefix,
+                                            const char *curr_prefix);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,5 @@
 demofiles/
+build/
 
 #################
 ## Visual Studio
@@ -98,3 +99,7 @@ $RECYCLE.BIN/
 # Mac crap
 .DS_Store
 
+/libs/OLDZLIB__include
+/libs/OLDZLIB__lib
+/libs/OLD_iconv
+/libs/zlib_1_2_11_msvc2017_64.zip
