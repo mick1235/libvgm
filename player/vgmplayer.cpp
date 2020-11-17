@@ -274,6 +274,7 @@ UINT8 VGMPlayer::ParseHeader(void)
 	_fileHdr.numTicks = ReadLE32(&_hdrBuffer[0x18]);
 	_fileHdr.loopOfs = ReadRelOfs(_hdrBuffer, 0x1C);
 	_fileHdr.loopTicks = ReadLE32(&_hdrBuffer[0x20]);
+	_fileHdr.recordHz = ReadLE32(&_hdrBuffer[0x24]);
 	
 	_fileHdr.loopBase = (INT8)_hdrBuffer[0x7E];
 	_fileHdr.loopModifier = _hdrBuffer[0x7F];
@@ -580,7 +581,7 @@ void VGMPlayer::RefreshMuting(VGMPlayer::CHIP_DEVICE& chipDev, const PLR_MUTE_OP
 UINT8 VGMPlayer::SetDeviceOptions(UINT32 id, const PLR_DEV_OPTS& devOpts)
 {
 	size_t optID = DeviceID2OptionID(id);
-	if (optID == (UINT32)-1)
+	if (optID == (size_t)-1)
 		return 0x80;	// bad device ID
 	
 	_devOpts[optID] = devOpts;
@@ -600,7 +601,7 @@ UINT8 VGMPlayer::SetDeviceOptions(UINT32 id, const PLR_DEV_OPTS& devOpts)
 UINT8 VGMPlayer::GetDeviceOptions(UINT32 id, PLR_DEV_OPTS& devOpts) const
 {
 	size_t optID = DeviceID2OptionID(id);
-	if (optID == (UINT32)-1)
+	if (optID == (size_t)-1)
 		return 0x80;	// bad device ID
 	
 	devOpts = _devOpts[optID];
@@ -610,7 +611,7 @@ UINT8 VGMPlayer::GetDeviceOptions(UINT32 id, PLR_DEV_OPTS& devOpts) const
 UINT8 VGMPlayer::SetDeviceMuting(UINT32 id, const PLR_MUTE_OPTS& muteOpts)
 {
 	size_t optID = DeviceID2OptionID(id);
-	if (optID == (UINT32)-1)
+	if (optID == (size_t)-1)
 		return 0x80;	// bad device ID
 	
 	_devOpts[optID].muteOpts = muteOpts;
@@ -624,7 +625,7 @@ UINT8 VGMPlayer::SetDeviceMuting(UINT32 id, const PLR_MUTE_OPTS& muteOpts)
 UINT8 VGMPlayer::GetDeviceMuting(UINT32 id, PLR_MUTE_OPTS& muteOpts) const
 {
 	size_t optID = DeviceID2OptionID(id);
-	if (optID == (UINT32)-1)
+	if (optID == (size_t)-1)
 		return 0x80;	// bad device ID
 	
 	muteOpts = _devOpts[optID].muteOpts;
@@ -634,6 +635,8 @@ UINT8 VGMPlayer::GetDeviceMuting(UINT32 id, PLR_MUTE_OPTS& muteOpts) const
 UINT8 VGMPlayer::SetPlayerOptions(const VGM_PLAY_OPTIONS& playOpts)
 {
 	_playOpts = playOpts;
+	// TODO: allow for mid-playback change of playbackHz (currently breaks playback)
+	//RefreshTSRates();	// refresh, in case _playOpts.playbackHz changed
 	return 0x00;
 }
 
@@ -660,12 +663,13 @@ UINT8 VGMPlayer::SetSampleRate(UINT32 sampleRate)
 
 void VGMPlayer::RefreshTSRates(void)
 {
-	_tsMult = _outSmplRate * 1;
-	_tsDiv = 44100;
+	_tsMult = _outSmplRate;
+	_ttMult = 1;
+	_tsDiv = _ttDiv = 44100;
 	if (_playOpts.playbackHz && _fileHdr.recordHz)
 	{
-		// TODO: fix at other places
 		_tsMult *= _fileHdr.recordHz;
+		_ttMult *= _fileHdr.recordHz;
 		_tsDiv *= _playOpts.playbackHz;
 	}
 	
@@ -684,7 +688,7 @@ UINT32 VGMPlayer::Sample2Tick(UINT32 samples) const
 
 double VGMPlayer::Tick2Second(UINT32 ticks) const
 {
-	return ticks * 1 / 44100.0;
+	return ticks * _ttMult / (double)(INT64)_tsDiv;
 }
 
 UINT8 VGMPlayer::GetState(void) const
