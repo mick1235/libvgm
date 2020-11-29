@@ -5,7 +5,9 @@
 PlayerBase::PlayerBase() :
 	_outSmplRate(0),
 	_eventCbFunc(NULL),
-	_eventCbParam(NULL)
+	_eventCbParam(NULL),
+	_fileReqCbFunc(NULL),
+	_fileReqCbParam(NULL)
 {
 }
 
@@ -35,7 +37,8 @@ UINT8 PlayerBase::CanLoadFile(DATA_LOADER *dataLoader) const
 
 /*static*/ UINT8 PlayerBase::InitDeviceOptions(PLR_DEV_OPTS& devOpts)
 {
-	devOpts.emuCore = 0x00;
+	devOpts.emuCore[0] = 0x00;
+	devOpts.emuCore[1] = 0x00;
 	devOpts.srMode = DEVRI_SRMODE_NATIVE;
 	devOpts.resmplMode = 0x00;
 	devOpts.smplRate = 0;
@@ -43,6 +46,7 @@ UINT8 PlayerBase::CanLoadFile(DATA_LOADER *dataLoader) const
 	devOpts.muteOpts.disable = 0x00;
 	devOpts.muteOpts.chnMute[0] = 0x00;
 	devOpts.muteOpts.chnMute[1] = 0x00;
+	memset(devOpts.panOpts.chnPan, 0x00, sizeof(devOpts.panOpts.chnPan));
 	return 0x00;
 }
 
@@ -62,10 +66,18 @@ UINT8 PlayerBase::SetPlaybackSpeed(double speed)
 	return 0xFF;	// not yet supported
 }
 
-void PlayerBase::SetCallback(PLAYER_EVENT_CB cbFunc, void* cbParam)
+void PlayerBase::SetEventCallback(PLAYER_EVENT_CB cbFunc, void* cbParam)
 {
 	_eventCbFunc = cbFunc;
 	_eventCbParam = cbParam;
+	
+	return;
+}
+
+void PlayerBase::SetFileReqCallback(PLAYER_FILEREQ_CB cbFunc, void* cbParam)
+{
+	_fileReqCbFunc = cbFunc;
+	_fileReqCbParam = cbParam;
 	
 	return;
 }

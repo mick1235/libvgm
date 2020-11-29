@@ -49,7 +49,12 @@ private:
 	{
 		std::vector<UINT8> data;
 	};
-	
+	struct DEVLINK_CB_DATA
+	{
+		S98Player* player;
+		S98_CHIPDEV* chipDev;
+	};
+
 public:
 	S98Player();
 	~S98Player();
@@ -73,7 +78,7 @@ public:
 	//UINT32 GetSampleRate(void) const;
 	UINT8 SetSampleRate(UINT32 sampleRate);
 	//UINT8 SetPlaybackSpeed(double speed);
-	//void SetCallback(PLAYER_EVENT_CB cbFunc, void* cbParam);
+	//void SetEventCallback(PLAYER_EVENT_CB cbFunc, void* cbParam);
 	UINT32 Tick2Sample(UINT32 ticks) const;
 	UINT32 Sample2Tick(UINT32 samples) const;
 	double Tick2Second(UINT32 ticks) const;
@@ -96,6 +101,7 @@ private:
 	UINT8 GetDeviceInstance(size_t id) const;
 	size_t DeviceID2OptionID(UINT32 id) const;
 	void RefreshMuting(S98_CHIPDEV& chipDev, const PLR_MUTE_OPTS& muteOpts);
+	void RefreshPanning(S98_CHIPDEV& chipDev, const PLR_PAN_OPTS& panOpts);
 	
 	void CalcSongLength(void);
 	UINT8 LoadTags(void);
@@ -106,11 +112,13 @@ private:
 	void RefreshTSRates(void);
 	
 	void GenerateDeviceConfig(void);
+	static void DeviceLinkCallback(void* userParam, VGM_BASEDEV* cDev, DEVLINK_INFO* dLink);
 	UINT8 SeekToTick(UINT32 tick);
 	UINT8 SeekToFilePos(UINT32 pos);
 	void ParseFile(UINT32 ticks);
 	void HandleEOF(void);
 	void DoCommand(void);
+	void DoRegWrite(UINT8 deviceID, UINT8 port, UINT8 reg, UINT8 data);
 	
 	enum
 	{

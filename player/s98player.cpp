@@ -245,6 +245,8 @@ UINT8 S98Player::LoadFile(DATA_LOADER *dataLoader)
 	// parse tags
 	LoadTags();
 	
+	RefreshTSRates();	// make Tick2Sample etc. work
+	
 	return 0x00;
 }
 
@@ -613,6 +615,25 @@ void S98Player::RefreshMuting(S98_CHIPDEV& chipDev, const PLR_MUTE_OPTS& muteOpt
 	return;
 }
 
+void S98Player::RefreshPanning(S98_CHIPDEV& chipDev, const PLR_PAN_OPTS& panOpts)
+{
+	VGM_BASEDEV* clDev;
+	UINT8 linkCntr = 0;
+	
+	for (clDev = &chipDev.base; clDev != NULL && linkCntr < 2; clDev = clDev->linkDev, linkCntr ++)
+	{
+		DEV_INFO* devInf = &clDev->defInf;
+		if (devInf->dataPtr == NULL)
+			continue;
+		DEVFUNC_PANALL funcPan = NULL;
+		UINT8 retVal = SndEmu_GetDeviceFunc(devInf->devDef, RWF_CHN_PAN | RWF_WRITE, DEVRW_ALL, 0, (void**)&funcPan);
+		if (retVal != EERR_NOT_FOUND && funcPan != NULL)
+			funcPan(devInf->dataPtr, &panOpts.chnPan[linkCntr][0]);
+	}
+	
+	return;
+}
+
 UINT8 S98Player::SetDeviceOptions(UINT32 id, const PLR_DEV_OPTS& devOpts)
 {
 	size_t optID = DeviceID2OptionID(id);
@@ -623,7 +644,10 @@ UINT8 S98Player::SetDeviceOptions(UINT32 id, const PLR_DEV_OPTS& devOpts)
 	
 	size_t devID = _optDevMap[optID];
 	if (devID < _devices.size())
+	{
 		RefreshMuting(_devices[devID], _devOpts[optID].muteOpts);
+		RefreshPanning(_devices[devID], _devOpts[optID].panOpts);
+	}
 	return 0x00;
 }
 
@@ -739,16 +763,6 @@ UINT32 S98Player::GetLoopTicks(void) const
 }
 
 
-static void SetSSGCore(void* userParam, VGM_BASEDEV* cDev, DEVLINK_INFO* dLink)
-{
-	if (dLink->devID == DEVID_AY8910)
-	{
-		// possible AY8910 sound core selection here
-	}
-	
-	return;
-}
-
 void S98Player::GenerateDeviceConfig(void)
 {
 	size_t curDev;
@@ -813,6 +827,22 @@ void S98Player::GenerateDeviceConfig(void)
 	return;
 }
 
+/*static*/ void S98Player::DeviceLinkCallback(void* userParam, VGM_BASEDEV* cDev, DEVLINK_INFO* dLink)
+{
+	DEVLINK_CB_DATA* cbData = (DEVLINK_CB_DATA*)userParam;
+	S98Player* oThis = cbData->player;
+	const S98_CHIPDEV& chipDev = *cbData->chipDev;
+	const PLR_DEV_OPTS* devOpts = (chipDev.optID != (size_t)-1) ? &oThis->_devOpts[chipDev.optID] : NULL;
+	
+	if (devOpts != NULL && devOpts->emuCore[1])
+	{
+		// set emulation core of linked device (OPN(A) SSG)
+		dLink->cfg->emuCore = devOpts->emuCore[1];
+	}
+	
+	return;
+}
+
 UINT8 S98Player::Start(void)
 {
 	size_t curDev;
@@ -851,7 +881,7 @@ UINT8 S98Player::Start(void)
 			cDev->optID = (size_t)-1;
 			devOpts = NULL;
 		}
-		devCfg->emuCore = (devOpts != NULL) ? devOpts->emuCore : 0x00;
+		devCfg->emuCore = (devOpts != NULL) ? devOpts->emuCore[0] : 0x00;
 		devCfg->srMode = (devOpts != NULL) ? devOpts->srMode : DEVRI_SRMODE_NATIVE;
 		if (devOpts != NULL && devOpts->smplRate)
 			devCfg->smplRate = devOpts->smplRate;
@@ -867,13 +897,19 @@ UINT8 S98Player::Start(void)
 		}
 		SndEmu_GetDeviceFunc(cDev->base.defInf.devDef, RWF_REGISTER | RWF_WRITE, DEVRW_A8D8, 0, (void**)&cDev->write);
 		
-		SetupLinkedDevices(&cDev->base, &SetSSGCore, this);
+		{
+			DEVLINK_CB_DATA dlCbData;
+			dlCbData.player = this;
+			dlCbData.chipDev = cDev;
+			SetupLinkedDevices(&cDev->base, &DeviceLinkCallback, &dlCbData);
+		}
 		
 		if (devOpts != NULL)
 		{
 			if (cDev->base.defInf.devDef->SetOptionBits != NULL)
 				cDev->base.defInf.devDef->SetOptionBits(cDev->base.defInf.dataPtr, devOpts->coreOpts);
 			RefreshMuting(*cDev, devOpts->muteOpts);
+			RefreshPanning(*cDev, devOpts->panOpts);
 			
 			_optDevMap[cDev->optID] = curDev;
 		}
@@ -936,9 +972,12 @@ UINT8 S98Player::Reset(void)
 	for (curDev = 0; curDev < _devices.size(); curDev ++)
 	{
 		S98_CHIPDEV* cDev = &_devices[curDev];
+		DEV_INFO* defInf = &cDev->base.defInf;
 		VGM_BASEDEV* clDev;
+		if (defInf->dataPtr == NULL)
+			continue;
 		
-		cDev->base.defInf.devDef->Reset(cDev->base.defInf.dataPtr);
+		defInf->devDef->Reset(defInf->dataPtr);
 		for (clDev = &cDev->base; clDev != NULL; clDev = clDev->linkDev)
 		{
 			// TODO: Resmpl_Reset(&clDev->resmpl);
@@ -946,7 +985,6 @@ UINT8 S98Player::Reset(void)
 		
 		if (_devHdrs[curDev].devType == S98DEV_OPNA)
 		{
-			DEV_INFO* defInf = &cDev->base.defInf;
 			DEVFUNC_WRITE_MEMSIZE SetRamSize = NULL;
 			
 			// setup DeltaT RAM size
@@ -1017,8 +1055,9 @@ UINT32 S98Player::Render(UINT32 smplCnt, WAVE_32BS* data)
 	INT32 smplStep;	// might be negative due to rounding errors in Tick2Sample
 	size_t curDev;
 	
+	// Note: use do {} while(), so that "smplCnt == 0" can be used to process until reaching the next sample.
 	curSmpl = 0;
-	while(curSmpl < smplCnt)
+	do
 	{
 		smplFileTick = Sample2Tick(_playSmpl);
 		ParseFile(smplFileTick - _playTick);
@@ -1027,8 +1066,8 @@ UINT32 S98Player::Render(UINT32 smplCnt, WAVE_32BS* data)
 		maxSmpl = Tick2Sample(_fileTick);
 		smplStep = maxSmpl - _playSmpl;
 		if (smplStep < 1)
-			smplStep = 1;
-		else if ((UINT32)smplStep > smplCnt - curSmpl)
+			smplStep = 1;	// must render at least 1 sample in order to advance
+		if ((UINT32)smplStep > smplCnt - curSmpl)
 			smplStep = smplCnt - curSmpl;
 		
 		for (curDev = 0; curDev < _devices.size(); curDev ++)
@@ -1050,7 +1089,7 @@ UINT32 S98Player::Render(UINT32 smplCnt, WAVE_32BS* data)
 			_psTrigger &= ~PLAYSTATE_END;
 			break;
 		}
-	}
+	} while(curSmpl < smplCnt);
 	
 	return curSmpl;
 }
@@ -1071,6 +1110,8 @@ void S98Player::HandleEOF(void)
 {
 	UINT8 doLoop = (_fileHdr.loopOfs != 0);
 	
+	if (_playState & PLAYSTATE_SEEK)	// recalculate playSmpl to fix state when triggering callbacks
+		_playSmpl = Tick2Sample(_fileTick);	// Note: fileTick results in more accurate position
 	if (doLoop)
 	{
 		if (_lastLoopTick == _fileTick)
@@ -1091,10 +1132,12 @@ void S98Player::HandleEOF(void)
 			UINT8 retVal;
 			
 			retVal = _eventCbFunc(this, _eventCbParam, PLREVT_LOOP, &_curLoop);
-			if (retVal == 0x01)
+			if (retVal == 0x01)	// "stop" signal?
 			{
 				_playState |= PLAYSTATE_END;
 				_psTrigger |= PLAYSTATE_END;
+				if (_eventCbFunc != NULL)
+					_eventCbFunc(this, _eventCbParam, PLREVT_END, NULL);
 				return;
 			}
 		}
@@ -1114,6 +1157,8 @@ void S98Player::DoCommand(void)
 {
 	if (_filePos >= DataLoader_GetSize(_dLoad))
 	{
+		if (_playState & PLAYSTATE_SEEK)	// recalculate playSmpl to fix state when triggering callbacks
+			_playSmpl = Tick2Sample(_fileTick);	// Note: fileTick results in more accurate position
 		_playState |= PLAYSTATE_END;
 		_psTrigger |= PLAYSTATE_END;
 		if (_eventCbFunc != NULL)
@@ -1130,41 +1175,45 @@ void S98Player::DoCommand(void)
 	{
 	case 0xFF:	// advance 1 tick
 		_fileTick ++;
-		return;
+		break;
 	case 0xFE:	// advance multiple ticks
 		_fileTick += 2 + ReadVarInt(_filePos);
-		return;
+		break;
 	case 0xFD:
 		HandleEOF();
-		return;
+		break;
+	default:
+		DoRegWrite(curCmd >> 1, curCmd & 0x01, _fileData[_filePos + 0x00], _fileData[_filePos + 0x01]);
+		_filePos += 0x02;
+		break;
 	}
 	
+	return;
+}
+
+void S98Player::DoRegWrite(UINT8 deviceID, UINT8 port, UINT8 reg, UINT8 data)
+{
+	if (deviceID >= _devices.size())
+		return;
+	
+	S98_CHIPDEV* cDev = &_devices[deviceID];
+	DEV_DATA* dataPtr = cDev->base.defInf.dataPtr;
+	if (dataPtr == NULL || cDev->write == NULL)
+		return;
+	
+	if (_devHdrs[deviceID].devType == S98DEV_DCSG)
 	{
-		UINT8 deviceID = curCmd >> 1;
-		if (deviceID < _devices.size())
-		{
-			S98_CHIPDEV* cDev = &_devices[deviceID];
-			DEV_DATA* dataPtr = cDev->base.defInf.dataPtr;
-			
-			UINT8 port = curCmd & 0x01;
-			UINT8 reg = _fileData[_filePos + 0x00];
-			UINT8 data = _fileData[_filePos + 0x01];
-			
-			if (_devHdrs[deviceID].devType == S98DEV_DCSG)
-			{
-				if (reg == 1)	// GG stereo
-					cDev->write(dataPtr, SN76496_W_GGST, data);
-				else
-					cDev->write(dataPtr, SN76496_W_REG, data);
-			}
-			else
-			{
-				cDev->write(dataPtr, (port << 1) | 0, reg);
-				cDev->write(dataPtr, (port << 1) | 1, data);
-			}
-		}
+		if (reg == 1)	// GG stereo
+			cDev->write(dataPtr, SN76496_W_GGST, data);
+		else
+			cDev->write(dataPtr, SN76496_W_REG, data);
 	}
-	_filePos += 0x02;
+	else
+	{
+		cDev->write(dataPtr, (port << 1) | 0, reg);
+		cDev->write(dataPtr, (port << 1) | 1, data);
+	}
+	
 	return;
 }
 

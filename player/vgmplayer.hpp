@@ -54,6 +54,7 @@ public:
 	{
 		VGM_BASEDEV base;
 		UINT8 vgmChipType;
+		UINT8 chipType;
 		UINT8 chipID;
 		UINT32 flags;
 		size_t optID;
@@ -111,8 +112,9 @@ protected:
 	typedef void (VGMPlayer::*COMMAND_FUNC)(void);	// VGM command member function callback
 	struct DEVLINK_CB_DATA
 	{
-		VGMPlayer* object;
-		UINT8 chipType;
+		VGMPlayer* player;
+		SONG_DEV_CFG* sdCfg;
+		CHIP_DEVICE* chipDev;
 	};
 	struct COMMAND_INFO
 	{
@@ -154,7 +156,8 @@ public:
 	//UINT32 GetSampleRate(void) const;
 	UINT8 SetSampleRate(UINT32 sampleRate);
 	//UINT8 SetPlaybackSpeed(double speed);
-	//void SetCallback(PLAYER_EVENT_CB cbFunc, void* cbParam);
+	//void SetEventCallback(PLAYER_EVENT_CB cbFunc, void* cbParam);
+	//void SetFileReqCallback(PLAYER_FILEREQ_CB cbFunc, void* cbParam);
 	UINT32 Tick2Sample(UINT32 ticks) const;
 	UINT32 Sample2Tick(UINT32 samples) const;
 	double Tick2Second(UINT32 ticks) const;
@@ -183,6 +186,7 @@ protected:
 	
 	size_t DeviceID2OptionID(UINT32 id) const;
 	void RefreshMuting(CHIP_DEVICE& chipDev, const PLR_MUTE_OPTS& muteOpts);
+	void RefreshPanning(CHIP_DEVICE& chipDev, const PLR_PAN_OPTS& panOpts);
 	
 	void RefreshTSRates(void);
 	
@@ -251,6 +255,7 @@ protected:
 	CPCONV* _cpcUTF16;	// UTF-16 LE -> UTF-8 codepage conversion
 	DATA_LOADER *_dLoad;
 	const UINT8* _fileData;	// data pointer for quick access, equals _dLoad->GetFileData().data()
+	std::vector<UINT8> _yrwRom;	// cache for OPL4 sample ROM (yrw801.rom)
 	
 	enum
 	{
@@ -305,6 +310,8 @@ protected:
 	UINT8 _psTrigger;	// used to temporarily trigger special commands
 	//PLAYER_EVENT_CB _eventCbFunc;
 	//void* _eventCbParam;
+	//PLAYER_FILEREQ_CB _fileReqCbFunc;
+	//void* _fileReqCbParam;
 	
 	static const UINT8 _OPT_DEV_LIST[_OPT_DEV_COUNT];	// list of configurable libvgm devices (different from VGM chip list]
 	static const UINT8 _DEV_LIST[_CHIP_COUNT];	// VGM chip ID -> libvgm device ID

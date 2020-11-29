@@ -134,14 +134,14 @@ UINT8 DROPlayer::LoadFile(DATA_LOADER *dataLoader)
 			_fileHdr.lengthMS = ReadLE32(&_fileData[0x08]);
 			_fileHdr.dataSize = ReadLE32(&_fileData[0x0C]);
 			_fileHdr.hwType = _fileData[0x10];
-			_dataOfs = 0x11;
+			_fileHdr.dataOfs = 0x11;
 			break;
 		case 1:
 			_fileHdr.lengthMS = ReadLE32(&_fileData[0x0C]);
 			_fileHdr.dataSize = ReadLE32(&_fileData[0x10]);
 			tempLng = ReadLE32(&_fileData[0x14]);
 			_fileHdr.hwType = (tempLng <= 0xFF) ? (UINT8)tempLng : 0xFF;
-			_dataOfs = 0x18;
+			_fileHdr.dataOfs = 0x18;
 			break;
 		}
 		// swap DualOPL2 and OPL3 values
@@ -164,7 +164,7 @@ UINT8 DROPlayer::LoadFile(DATA_LOADER *dataLoader)
 		_fileHdr.cmdDlyShort = _fileData[0x17];
 		_fileHdr.cmdDlyLong = _fileData[0x18];
 		_fileHdr.regCmdCnt = _fileData[0x19];
-		_dataOfs = 0x1A + _fileHdr.regCmdCnt;
+		_fileHdr.dataOfs = 0x1A + _fileHdr.regCmdCnt;
 		
 		if (_fileHdr.regCmdCnt > 0x80)
 			_fileHdr.regCmdCnt = 0x80;	// only 0x80 values are possible
@@ -241,7 +241,7 @@ void DROPlayer::ScanInitBlock(void)
 	std::fill(_initRegSet.begin(), _initRegSet.end(), false);
 	_initOPL3Enable = 0x00;
 	
-	filePos = _dataOfs;
+	filePos = _fileHdr.dataOfs;
 	if (_fileHdr.verMajor < 2)
 	{
 		selPort = 0;
@@ -325,7 +325,7 @@ UINT8 DROPlayer::UnloadFile(void)
 	_dLoad = NULL;
 	_fileData = NULL;
 	_fileHdr.verMajor = 0xFF;
-	_dataOfs = 0x00;
+	_fileHdr.dataOfs = 0x00;
 	_devTypes.clear();
 	_devPanning.clear();
 	_devCfgs.clear();
@@ -379,7 +379,7 @@ UINT8 DROPlayer::GetSongDeviceInfo(std::vector<PLR_DEV_INFO>& devInfList) const
 		
 		devInf.id = curDev;
 		devInf.type = _devTypes[curDev];
-		devInf.instance = curDev;
+		devInf.instance = (UINT8)curDev;
 		devInf.devCfg = devCfg;
 		if (! _devices.empty())
 		{
@@ -440,6 +440,19 @@ void DROPlayer::RefreshMuting(DRO_CHIPDEV& chipDev, const PLR_MUTE_OPTS& muteOpt
 	DEV_INFO* devInf = &chipDev.base.defInf;
 	if (devInf->dataPtr != NULL && devInf->devDef->SetMuteMask != NULL)
 		devInf->devDef->SetMuteMask(devInf->dataPtr, muteOpts.chnMute[0]);
+	
+	return;
+}
+
+void DROPlayer::RefreshPanning(DRO_CHIPDEV& chipDev, const PLR_PAN_OPTS& panOpts)
+{
+	DEV_INFO* devInf = &chipDev.base.defInf;
+	if (devInf->dataPtr == NULL)
+		return;
+	DEVFUNC_PANALL funcPan = NULL;
+	UINT8 retVal = SndEmu_GetDeviceFunc(devInf->devDef, RWF_CHN_PAN | RWF_WRITE, DEVRW_ALL, 0, (void**)&funcPan);
+	if (retVal != EERR_NOT_FOUND && funcPan != NULL)
+		funcPan(devInf->dataPtr, &panOpts.chnPan[0][0]);
 	
 	return;
 }
@@ -614,7 +627,7 @@ UINT8 DROPlayer::Start(void)
 		cDev->optID = DeviceID2OptionID(curDev);
 		
 		devOpts = (cDev->optID != (size_t)-1) ? &_devOpts[cDev->optID] : NULL;
-		devCfg->emuCore = (devOpts != NULL) ? devOpts->emuCore : 0x00;
+		devCfg->emuCore = (devOpts != NULL) ? devOpts->emuCore[0] : 0x00;
 		devCfg->srMode = (devOpts != NULL) ? devOpts->srMode : DEVRI_SRMODE_NATIVE;
 		if (devOpts != NULL && devOpts->smplRate)
 			devCfg->smplRate = devOpts->smplRate;
@@ -689,7 +702,7 @@ UINT8 DROPlayer::Reset(void)
 	UINT8 curPort;
 	UINT8 devport;
 	
-	_filePos = _dataOfs;
+	_filePos = _fileHdr.dataOfs;
 	_fileTick = 0;
 	_playTick = 0;
 	_playSmpl = 0;
@@ -720,11 +733,11 @@ UINT8 DROPlayer::Reset(void)
 			continue;
 		
 		if (_devTypes[curDev] == DEVID_YMF262)
-			WriteReg((curDev << _portShift) | 1, 0x05, 0x01);	// temporary OPL3 enable for proper register reset
+			WriteReg((UINT8)(curDev << _portShift) | 1, 0x05, 0x01);	// temporary OPL3 enable for proper register reset
 		
 		for (curPort = 0; curPort <= _portMask; curPort ++)
 		{
-			devport = (curDev << _portShift) | curPort;
+			devport = (UINT8)(curDev << _portShift) | curPort;
 			for (curReg = 0xFF; curReg >= 0x20; curReg --)
 			{
 				// [optimization] only send registers that are NOT part of the initialization block
@@ -732,7 +745,7 @@ UINT8 DROPlayer::Reset(void)
 					WriteReg(devport, curReg, 0x00);
 			}
 		}
-		devport = (curDev << _portShift);
+		devport = (UINT8)(curDev << _portShift);
 		WriteReg(devport | 0, 0x08, 0x00);
 		WriteReg(devport | 0, 0x01, 0x00);
 		
@@ -808,8 +821,9 @@ UINT32 DROPlayer::Render(UINT32 smplCnt, WAVE_32BS* data)
 	INT32 smplStep;	// might be negative due to rounding errors in Tick2Sample
 	size_t curDev;
 	
+	// Note: use do {} while(), so that "smplCnt == 0" can be used to process until reaching the next sample.
 	curSmpl = 0;
-	while(curSmpl < smplCnt)
+	do
 	{
 		smplFileTick = Sample2Tick(_playSmpl);
 		ParseFile(smplFileTick - _playTick);
@@ -818,8 +832,8 @@ UINT32 DROPlayer::Render(UINT32 smplCnt, WAVE_32BS* data)
 		maxSmpl = Tick2Sample(_fileTick);
 		smplStep = maxSmpl - _playSmpl;
 		if (smplStep < 1)
-			smplStep = 1;
-		else if ((UINT32)smplStep > smplCnt - curSmpl)
+			smplStep = 1;	// must render at least 1 sample in order to advance
+		if ((UINT32)smplStep > smplCnt - curSmpl)
 			smplStep = smplCnt - curSmpl;
 		
 		for (curDev = 0; curDev < _devices.size(); curDev ++)
@@ -841,7 +855,7 @@ UINT32 DROPlayer::Render(UINT32 smplCnt, WAVE_32BS* data)
 			_psTrigger &= ~PLAYSTATE_END;
 			break;
 		}
-	}
+	} while(curSmpl < smplCnt);
 	
 	return curSmpl;
 }
@@ -964,6 +978,8 @@ void DROPlayer::DoCommand_v2(void)
 
 void DROPlayer::DoFileEnd(void)
 {
+	if (_playState & PLAYSTATE_SEEK)	// recalculate playSmpl to fix state when triggering callbacks
+		_playSmpl = Tick2Sample(_fileTick);	// Note: fileTick results in more accurate position
 	_playState |= PLAYSTATE_END;
 	_psTrigger |= PLAYSTATE_END;
 	if (_eventCbFunc != NULL)
@@ -980,7 +996,7 @@ void DROPlayer::WriteReg(UINT8 port, UINT8 reg, UINT8 data)
 		return;
 	DRO_CHIPDEV* cDev = &_devices[devID];
 	DEV_DATA* dataPtr = cDev->base.defInf.dataPtr;
-	if (dataPtr == NULL)
+	if (dataPtr == NULL || cDev->write == NULL)
 		return;
 	
 	port &= _portMask;

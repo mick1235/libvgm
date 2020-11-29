@@ -39,6 +39,8 @@ extern "C" int __cdecl _kbhit(void);
 #include "audio/AudioStream.h"
 #include "audio/AudioStream_SpcDrvFuns.h"
 #include "emu/Resampler.h"
+#include "emu/SoundDevs.h"	// for DEVID_*
+#include "emu/EmuCores.h"
 #include "utils/OSMutex.h"
 
 #define USE_MEMORY_LOADER 1	// define to use the in-memory loader
@@ -53,6 +55,7 @@ static const char* GetFileTitle(const char* filePath);
 static UINT32 CalcCurrentVolume(UINT32 playbackSmpl);
 static UINT32 FillBuffer(void* drvStruct, void* userParam, UINT32 bufSize, void* Data);
 static UINT8 FilePlayCallback(PlayerBase* player, void* userParam, UINT8 evtType, void* evtParam);
+static DATA_LOADER* RequestFileCallback(void* userParam, PlayerBase* player, const char* fileName);
 static UINT32 GetNthAudioDriver(UINT8 adrvType, INT32 drvNumber);
 static UINT8 InitAudioSystem();
 static UINT8 DeinitAudioSystem();
@@ -158,7 +161,8 @@ int main(const int argc, char* argv[]) {
 			fprintf(stderr, "Error 0x%02X loading file!\n", retVal);
 			continue;
 		}
-		player->SetCallback(&FilePlayCallback, nullptr);
+		player->SetEventCallback(FilePlayCallback, nullptr);
+		player->SetFileReqCallback(RequestFileCallback, nullptr);
 
 		if (player->GetPlayerType() == FCC_S98) {
 			auto* s98Play = dynamic_cast<S98Player*>(player);
@@ -215,6 +219,41 @@ int main(const int argc, char* argv[]) {
 		}
 
 		putchar('\n');
+
+		{
+			PLR_DEV_OPTS devOpts;
+			UINT32 devOptID;
+		
+			devOptID = PLR_DEV_ID(DEVID_SN76496, 0);
+			retVal = player->GetDeviceOptions(devOptID, devOpts);
+			if (! (retVal & 0x80))
+			{
+				static const INT16 panPos[4] = {0x00, -0x80, +0x80, 0x100};
+				devOpts.emuCore[0] = FCC_MAXM;
+				memcpy(devOpts.panOpts.chnPan, panPos, sizeof(panPos));
+				player->SetDeviceOptions(devOptID, devOpts);
+			}
+		
+			devOptID = PLR_DEV_ID(DEVID_YM2413, 0);
+			retVal = player->GetDeviceOptions(devOptID, devOpts);
+			if (! (retVal & 0x80))
+			{
+				static const INT16 panPos[14] = {
+					-0x100, +0x100, -0x80, +0x80, -0x40, +0x40, -0xC0, +0xC0, 0x00,
+					-0x60, +0x60, 0x00, -0xC0, +0xC0};
+				memcpy(devOpts.panOpts.chnPan, panPos, sizeof(panPos));
+				player->SetDeviceOptions(devOptID, devOpts);
+			}
+		
+			devOptID = PLR_DEV_ID(DEVID_AY8910, 0);
+			retVal = player->GetDeviceOptions(devOptID, devOpts);
+			if (! (retVal & 0x80))
+			{
+				static const INT16 panPos[3] = {-0x80, +0x80, 0x00};
+				memcpy(devOpts.panOpts.chnPan, panPos, sizeof(panPos));
+				player->SetDeviceOptions(devOptID, devOpts);
+			}
+		}
 
 		player->SetSampleRate(sampleRate);
 		player->Start();
@@ -369,6 +408,7 @@ Sound Chip ID:
 			Note: The number is the ID of the active sound chip (as shown by device info).
 			      All sound chips can be controlled with 0x800I00NN (NN = libvgm device ID, I = instance, i.e. 0 or 1)
 		C param - set emulation core to param (four-character code, case sensitive, empty = use default)
+		LC param - set emulation core of *linked device* (OPN SSG/OPL4 FM) to param (four-character code, case sensitive, empty = use default)
 		O param - set sound core options (core-specific)
 		SRM param - set sample rate mode (0/1/2, see DEVRI_SRMODE_*)
 		SR param - set emulated sample rate (0 = use rate of output stream)
@@ -414,8 +454,8 @@ static void DoChipControlMode(PlayerBase* player) {
 				}
 
 				printf("Cfg: Core %s, Opts 0x%X, srMode 0x%02X, sRate %u, resampleMode 0x%02X\n",
-				       FCC2Str(devOpts.emuCore).c_str(), devOpts.coreOpts, devOpts.srMode, devOpts.smplRate,
-				       devOpts.resmplMode);
+					FCC2Str(devOpts.emuCore[0]).c_str(), devOpts.coreOpts, devOpts.srMode,
+					devOpts.smplRate, devOpts.resmplMode);
 				printf("Muting: Chip %s [0x%02X], Channel Mask: 0x%02X\n",
 				       (devOpts.muteOpts.disable & 0x01) ? "Off" : "On", devOpts.muteOpts.disable,
 				       devOpts.muteOpts.chnMute[0]);
@@ -456,9 +496,9 @@ static void DoChipControlMode(PlayerBase* player) {
 				mode = 0;
 				continue;
 			}
-
-			// Core / Opts / SRMode / SampleRate / ReSampleMode / Muting
-			printf("Command [C/O/SRM/SR/RSM/M data]: ");
+			
+			// Core / Linked Core / Opts / SRMode / SampleRate / ReSampleMode / Muting
+			printf("Command [C/LC/O/SRM/SR/RSM/M data]: ");
 			fgets(line, 0x80, stdin);
 			StripNewline(line);
 
@@ -470,7 +510,12 @@ static void DoChipControlMode(PlayerBase* player) {
 			if (! strcmp(line, "C")) {
 				std::string fccStr(tokenStr);
 				fccStr.resize(4, 0x00);
-				devOpts.emuCore = (fccStr[0] << 24) | (fccStr[1] << 16) | (fccStr[2] << 8) | (fccStr[3] << 0);
+				devOpts.emuCore[0] = (fccStr[0] << 24) | (fccStr[1] << 16) | (fccStr[2] << 8) | (fccStr[3] << 0);
+				player->SetDeviceOptions(static_cast<UINT32>(chipID), devOpts);
+			} else if (! strcmp(line, "LC")) {
+				std::string fccStr(tokenStr);
+				fccStr.resize(4, 0x00);
+				devOpts.emuCore[1] = (fccStr[0] << 24) | (fccStr[1] << 16) | (fccStr[2] << 8) | (fccStr[3] << 0);
 				player->SetDeviceOptions(static_cast<UINT32>(chipID), devOpts);
 			} else if (! strcmp(line, "O")) {
 				devOpts.coreOpts = static_cast<UINT32>(strtoul(tokenStr, &endPtr, 0));
@@ -779,8 +824,8 @@ static UINT8 FilePlayCallback(PlayerBase* player, void* userParam, UINT8 evtType
 					if (fadeSmplStart == static_cast<UINT32>(-1)) fadeSmplStart = player->GetCurPos(PLAYPOS_SAMPLE);
 				} else {
 					printf("Loop End.\n");
-					playState |= PLAYSTATE_END;
-					return 0x01;
+					playState |= PLAYSTATE_END;	// prevent "Song End" message
+					return 0x01;	// Note: will trigger PLREVT_END
 				}
 			}
 			if (player->GetState() & PLAYSTATE_SEEK) break;
@@ -788,6 +833,8 @@ static UINT8 FilePlayCallback(PlayerBase* player, void* userParam, UINT8 evtType
 			break;
 		}
 		case PLREVT_END:
+			if (playState & PLAYSTATE_END)
+				break;
 			playState |= PLAYSTATE_END;
 			printf("Song End.\n");
 			break;
@@ -796,7 +843,18 @@ static UINT8 FilePlayCallback(PlayerBase* player, void* userParam, UINT8 evtType
 	return 0x00;
 }
 
-static UINT32 GetNthAudioDriver(UINT8 adrvType, INT32 drvNumber) {
+static DATA_LOADER* RequestFileCallback(void* userParam, PlayerBase* player, const char* fileName)
+{
+	DATA_LOADER* dLoad = FileLoader_Init(fileName);
+	UINT8 retVal = DataLoader_Load(dLoad);
+	if (! retVal)
+		return dLoad;
+	DataLoader_Deinit(dLoad);
+	return NULL;
+}
+
+static UINT32 GetNthAudioDriver(UINT8 adrvType, INT32 drvNumber)
+{
 	// special numbers for drvNumber:
 	//	-1 - don't select any
 	//	-2 - select last found driver
