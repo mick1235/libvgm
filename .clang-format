@@ -1,0 +1,24 @@
+# Format Style Options - Created with Clang Power Tools
+---
+Language: Cpp
+BasedOnStyle: Google
+AlignAfterOpenBracket: DontAlign
+AlignOperands: false
+AlignTrailingComments: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Always
+AlwaysBreakBeforeMultilineStrings: false
+BreakBeforeBinaryOperators: All
+BreakStringLiterals: false
+ColumnLimit: 140
+ContinuationIndentWidth: 2
+IndentCaseLabels: false
+IndentWidth: 4
+MaxEmptyLinesToKeep: 2
+ReflowComments: false
+SortIncludes: false
+SpaceAfterLogicalNot: true
+SpaceBeforeCpp11BracedList: true
+SpacesBeforeTrailingComments: 1
+UseTab: ForContinuationAndIndentation
+...

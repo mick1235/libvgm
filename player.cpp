@@ -627,8 +627,8 @@ static void DoChipControlMode(PlayerBase* player) {
 			if (! strcmp(line, "T") || !strcmp(line, "FI")) {
 				auto val = static_cast<int>(strtol(tokenStr, &endPtr, 0));
 				if (endPtr == tokenStr) {
-					for (endPtr = tokenStr; *endPtr != '\0'; endPtr ++) *endPtr = static_cast<char>(
-						toupper(static_cast<unsigned char>(*endPtr)));
+					for (endPtr = tokenStr; *endPtr != '\0'; endPtr ++)
+						*endPtr = static_cast<char>(toupper(static_cast<unsigned char>(*endPtr)));
 					letter = static_cast<unsigned char>(*tokenStr);
 					if (letter == 'E' || !strcmp(tokenStr, "ON")) val = 1;
 					else if (letter == 'D' || !strcmp(tokenStr, "OFF")) val = 0;
